@@ -1,22 +1,23 @@
 package de.maxhenkel.status.playerstate;
 
+import com.mojang.logging.LogUtils;
 import de.maxhenkel.status.Status;
 import de.maxhenkel.status.StatusClient;
 import de.maxhenkel.status.events.ClientWorldEvents;
 import de.maxhenkel.status.net.NetManager;
 import de.maxhenkel.status.net.PlayerStatePacket;
 import de.maxhenkel.status.net.PlayerStatesPacket;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+import javax.annotation.Nullable;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentUtils;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.resources.ResourceLocation;
-
-import javax.annotation.Nullable;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import org.slf4j.Logger;
 
 public class ClientPlayerStateManager {
 
@@ -29,12 +30,23 @@ public class ClientPlayerStateManager {
         states = new HashMap<>();
         NetManager.registerClientReceiver(PlayerStatePacket.class, (client, handler, responseSender, packet) -> {
             states.put(packet.getPlayerState().getPlayer(), packet.getPlayerState());
+            if (Minecraft.getInstance().player.getGameProfile().getId().equals(packet.getPlayerState().getPlayer())) {
+                doSyncServerState(packet.getPlayerState());
+            }
         });
         NetManager.registerClientReceiver(PlayerStatesPacket.class, (client, handler, responseSender, packet) -> {
             states = packet.getPlayerStates();
         });
         ClientWorldEvents.DISCONNECT.register(this::onDisconnect);
         ClientWorldEvents.JOIN_SERVER.register(this::onConnect);
+    }
+
+    private void doSyncServerState(PlayerState playerState) {
+        StatusClient.CLIENT_CONFIG.noSleep.set(playerState.isNoSleep());
+        if(playerState.isNoSleep() != StatusClient.STATE_MANAGER.getNoSleep()) {
+            StatusClient.STATE_MANAGER.setNoSleep(playerState.isNoSleep());
+        }
+        StatusClient.CLIENT_CONFIG.noSleep.save();
     }
 
     public String getState() {
@@ -75,7 +87,9 @@ public class ClientPlayerStateManager {
 
     private PlayerState getDefaultState() {
         if (StatusClient.CLIENT_CONFIG.persistState.get()) {
-            return new PlayerState(Minecraft.getInstance().getUser().getGameProfile().getId(), StatusClient.CLIENT_CONFIG.availability.get(), StatusClient.CLIENT_CONFIG.status.get(), StatusClient.CLIENT_CONFIG.noSleep.get());
+            return new PlayerState(Minecraft.getInstance().getUser().getGameProfile().getId(),
+                StatusClient.CLIENT_CONFIG.availability.get(), StatusClient.CLIENT_CONFIG.status.get(),
+                StatusClient.CLIENT_CONFIG.noSleep.get());
         } else {
             return new PlayerState(Minecraft.getInstance().getUser().getGameProfile().getId());
         }
@@ -93,13 +107,15 @@ public class ClientPlayerStateManager {
     }
 
     private void showChangeStatusMessage() {
-        Minecraft.getInstance().player.sendSystemMessage(ComponentUtils.wrapInSquareBrackets(Component.translatable("message.status.mod_name"))
+        Minecraft.getInstance().player.sendSystemMessage(
+            ComponentUtils.wrapInSquareBrackets(Component.translatable("message.status.mod_name"))
                 .withStyle(ChatFormatting.GREEN)
                 .append(" ")
                 .append(Component.translatable("message.status.change_status")
-                        .withStyle(style -> style
-                                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Component.translatable("message.status.set_status")))
-                        ).withStyle(ChatFormatting.WHITE)
+                    .withStyle(style -> style
+                        .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                            Component.translatable("message.status.set_status")))
+                    ).withStyle(ChatFormatting.WHITE)
                 )
         );
     }
@@ -118,9 +134,12 @@ public class ClientPlayerStateManager {
 
     private static final ResourceLocation DND = new ResourceLocation(Status.MODID, "textures/icons/dnd.png");
     private static final ResourceLocation OPEN = new ResourceLocation(Status.MODID, "textures/icons/open.png");
-    private static final ResourceLocation NO_AVAILABILITY = new ResourceLocation(Status.MODID, "textures/icons/no_availability.png");
-    private static final ResourceLocation RECORDING = new ResourceLocation(Status.MODID, "textures/icons/recording.png");
-    private static final ResourceLocation STREAMING = new ResourceLocation(Status.MODID, "textures/icons/streaming.png");
+    private static final ResourceLocation NO_AVAILABILITY = new ResourceLocation(Status.MODID,
+        "textures/icons/no_availability.png");
+    private static final ResourceLocation RECORDING = new ResourceLocation(Status.MODID,
+        "textures/icons/recording.png");
+    private static final ResourceLocation STREAMING = new ResourceLocation(Status.MODID,
+        "textures/icons/streaming.png");
     private static final ResourceLocation NEUTRAL = new ResourceLocation(Status.MODID, "textures/icons/neutral.png");
 
     @Nullable
